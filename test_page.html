@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Test Page for Screen Recording</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+  }
+  #content {
+    margin-top: 20px;
+    border: 1px solid #ccc;
+    padding: 20px;
+  }
+  button {
+    margin: 5px 0;
+    padding: 10px;
+  }
+  #feedback {
+    margin-top: 20px;
+    color: green;
+  }
+</style>
+</head>
+<body>
+<h1>Test Page for Screen Recording & Automation Suggestion</h1>
+<p>Perform some repetitive actions here (like clicking the "Show/Hide Info" button multiple times or copying text) and then run the screen recording script to analyze the frames.</p>
+
+<button id="toggleButton">Show Info</button>
+<div id="content" style="display: none;">
+  <h2>Information Section</h2>
+  <p>This is some information you might check repeatedly. Consider automating tasks like copying this text or navigating here.</p>
+  <button id="copyButton">Copy Text</button>
+</div>
+
+<div id="feedback"></div>
+
+<script>
+  const toggleButton = document.getElementById('toggleButton');
+  const content = document.getElementById('content');
+  const copyButton = document.getElementById('copyButton');
+  const feedback = document.getElementById('feedback');
+
+  toggleButton.addEventListener('click', () => {
+    if (content.style.display === 'none') {
+      content.style.display = 'block';
+      toggleButton.textContent = 'Hide Info';
+    } else {
+      content.style.display = 'none';
+      toggleButton.textContent = 'Show Info';
+    }
+  });
+
+  copyButton.addEventListener('click', () => {
+    // Simulate a text copy action
+    const textToCopy = "This is some text to be copied multiple times.";
+    navigator.clipboard.writeText(textToCopy).then(() => {
+      feedback.textContent = "Text copied! (You can do this multiple times.)";
+      setTimeout(() => {
+        feedback.textContent = "";
+      }, 2000);
+    });
+  });
+</script>
+</body>
+</html>
