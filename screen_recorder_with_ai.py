@@ -1,114 +1,168 @@
-import mss
-import numpy as np
+import os
 import time
-from pathlib import Path
-import requests
+import base64
 import json
-import cv2
+import requests
+import pyautogui
+from pathlib import Path
+from dotenv import load_dotenv
 
-# ---------------------------------------
-# Configuration
-# ---------------------------------------
-OLLAMA_URL = "http://localhost:11400/api/generate"  # Ollama API endpoint
-MODEL_NAME = "moondream:latest"  # Ollama model name
-FRAMES_DIR = "frames"  # Directory to save screenshots
-DURATION = 10  # Duration in seconds for screen capturing
-CAPTURE_INTERVAL = 1  # Interval in seconds between screenshots
+# -----------------------------------------------------------------
+# 1. Load Environment (for API_KEY) and Set Constants
+# -----------------------------------------------------------------
+load_dotenv()  # Loads .env if present
 
-# ---------------------------------------
-# Function to Capture Multiple Screenshots
-# ---------------------------------------
-def capture_screenshots(duration, interval, output_dir="frames"):
-    Path(output_dir).mkdir(exist_ok=True)
-    with mss.mss() as sct:
-        monitor = sct.monitors[1]  # Primary monitor
-        width = monitor["width"]
-        height = monitor["height"]
-        print(f"Screen resolution detected: {width}x{height}")
-        print(f"Starting screenshot capture for {duration} seconds at {interval}-second intervals...")
-        
-        start_time = time.time()
-        elapsed = 0
-        count = 0
-        
-        while elapsed < duration:
-            img = sct.grab(monitor)
-            frame = np.array(img)
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
-            timestamp = int(elapsed)
-            frame_path = Path(output_dir) / f"frame_{count:03d}.jpg"
-            cv2.imwrite(str(frame_path), frame)
-            print(f"Captured {frame_path}")
-            count += 1
-            time.sleep(interval)
-            elapsed = time.time() - start_time
-        
-        print(f"Captured {count} screenshots to '{output_dir}' directory.")
-        return count
+API_KEY = os.getenv("API_KEY")
+GPT_VISION_URL = "https://api.openai.com/v1/chat/completions"  # MUST be a vision-capable endpoint if you have it
+MODEL_NAME = "gpt-4o-mini"  # Placeholder model name per docs
 
-# ---------------------------------------
-# Analyze Screenshots with Ollama
-# ---------------------------------------
-def analyze_screenshots_with_ollama(output_dir="frames"):
-    frame_files = sorted(Path(output_dir).glob("*.jpg"))
-    frame_count = len(frame_files)
-    
-    if frame_count == 0:
-        print("No screenshots to analyze.")
-        return "No screenshots were captured for analysis."
-    
-    # Describe the screenshots as interactions on the HTML page
-    frame_descriptions = []
-    for frame_path in frame_files:
-        frame_descriptions.append(
-            f"Frame {frame_path.name}: The user interacts with the provided HTML demo page, potentially toggling info sections, clicking buttons, or copying text."
+# Directory where we’ll store screenshots
+SCREENSHOTS_DIR = "continuous_screenshots"
+Path(SCREENSHOTS_DIR).mkdir(exist_ok=True)
+
+# How long to capture screenshots in seconds
+DURATION = 15
+# How often to take a screenshot in seconds (e.g., every 2 seconds)
+CAPTURE_INTERVAL = 1
+
+# -----------------------------------------------------------------
+# 2. Continuous Screenshots Function
+# -----------------------------------------------------------------
+def take_continuous_screenshots(
+    screenshots_dir: str,
+    duration: int = 15,
+    interval: float = 1.0
+):
+    """
+    Continuously captures screenshots for 'duration' seconds,
+    saving each screenshot to 'screenshots_dir' every 'interval' seconds.
+    """
+    start_time = time.time()
+    screenshot_count = 0
+
+    print(f"Starting continuous screenshots for {duration} seconds...")
+
+    while True:
+        current_time = time.time()
+        elapsed = current_time - start_time
+        
+        if elapsed > duration:
+            break
+
+        screenshot_path = Path(screenshots_dir) / f"screenshot_{screenshot_count:03d}.png"
+
+        # Capture the entire screen
+        image = pyautogui.screenshot()
+        image.save(screenshot_path)
+        print(f"Captured {screenshot_path}")
+
+        screenshot_count += 1
+        time.sleep(interval)  # Wait until next capture
+
+    print(f"Captured a total of {screenshot_count} screenshots in '{screenshots_dir}'.")
+    return screenshot_count
+
+# -----------------------------------------------------------------
+# 3. Encode Image Function (Base64)
+# -----------------------------------------------------------------
+def encode_image(image_path: str) -> str:
+    """
+    Reads an image from disk and returns a Base64-encoded string.
+    """
+    with open(image_path, "rb") as f:
+        return base64.b64encode(f.read()).decode("utf-8")
+
+# -----------------------------------------------------------------
+# 4. Analyze Screenshots with GPT-4 Vision in ONE request
+# -----------------------------------------------------------------
+def analyze_screenshots_with_gpt_vision(screenshots_dir: str) -> str:
+    """
+    Gathers all images in 'screenshots_dir', encodes them, and sends them
+    in a single GPT-4 Vision request to generate a SOP (or describe images).
+    """
+    # Collect all PNG files in alphabetical order
+    image_files = sorted(Path(screenshots_dir).glob("*.png"))
+    if not image_files:
+        return "No screenshots found to analyze."
+
+    # Build the content array for the user message
+    content_array = [
+        {
+            "type": "text",
+            "text": "What is shown in these images? Please describe them step-by-step and create an SOP based on these images. I want you to only give me explinations based on the images"
+        }
+    ]
+
+    for img_path in image_files:
+        base64_data = encode_image(str(img_path))
+        # Insert each image as a "type: image_url" entry, with data URI
+        content_array.append(
+            {
+                "type": "image_url",
+                "image_url": {
+                    # data:image/png is common if your screenshot is .png 
+                    "url": f"data:image/png;base64,{base64_data}"
+                },
+            }
         )
-    
-    combined_description = "\n".join(frame_descriptions)
-    prompt = (
-        "You are an expert in workflow automation. Based on the following user interactions captured "
-        "from screenshots of the provided HTML page (show/hide info, copy text, etc.), "
-        "identify repetitive or time-consuming tasks and suggest actionable automation opportunities.\n\n"
-        f"{combined_description}\n\n"
-        "Provide detailed, practical recommendations as a numbered list."
-    )
-    
-    payload = {"model": MODEL_NAME, "prompt": prompt}
-    
-    try:
-        response = requests.post(OLLAMA_URL, json=payload, stream=True)
-        if response.status_code == 200:
-            # Ollama may send the response in chunks
-            analysis = ""
-            for line in response.iter_lines(decode_unicode=True):
-                if line:
-                    try:
-                        data = json.loads(line)
-                        analysis += data.get("data", "")
-                    except json.JSONDecodeError:
-                        # Handle lines that are not JSON
-                        analysis += line
-            analysis = analysis.strip()
-            if not analysis:
-                analysis = "No data returned by Ollama."
-            return analysis
-        else:
-            return f"Error from Ollama API: {response.text}"
-    except Exception as e:
-        return f"Error connecting to Ollama API: {e}"
 
-# ---------------------------------------
-# Main Execution Flow
-# ---------------------------------------
+    # Prompt for GPT-4 Vision
+    # Adjust content as desired (below is just an example).
+    messages = [
+        {"role": "system", "content": "You are an AI expert in process automation."},
+        {
+            "role": "user",
+            "content": content_array,
+        },
+    ]
+
+    payload = {
+        "model": MODEL_NAME,
+        "messages": messages,
+        "max_tokens": 300,
+        "temperature": 0.7,
+    }
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {API_KEY}",
+    }
+
+    # Send the request
+    try:
+        response = requests.post(GPT_VISION_URL, headers=headers, json=payload, timeout=120)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if "choices" in data and len(data["choices"]) > 0:
+                # The content might be found in data["choices"][0]["message"]["content"]
+                return data["choices"][0]["message"]["content"].strip()
+            else:
+                return "No content returned by GPT Vision."
+        else:
+            return f"Error {response.status_code}: {response.text}"
+
+    except Exception as e:
+        return f"Error connecting to GPT Vision: {e}"
+
+# -----------------------------------------------------------------
+# 5. Main: Continuous Capture, then One-Time Analysis
+# -----------------------------------------------------------------
 if __name__ == "__main__":
-    # Step 1: Capture multiple screenshots
-    captured_frames = capture_screenshots(DURATION, CAPTURE_INTERVAL, FRAMES_DIR)
-    
-    # Step 2: Analyze captured screenshots with Ollama
-    if captured_frames > 0:
-        print("Analyzing screenshots with Ollama...")
-        analysis_results = analyze_screenshots_with_ollama(FRAMES_DIR)
-        print("\nAutomation Recommendations:")
-        print(analysis_results)
-    else:
-        print("No screenshots captured; skipping analysis.")
+    # A. Continuously screenshot for DURATION seconds at CAPTURE_INTERVAL intervals
+    num_screenshots = take_continuous_screenshots(
+        SCREENSHOTS_DIR, 
+        duration=DURATION,
+        interval=CAPTURE_INTERVAL
+    )
+
+    if num_screenshots == 0:
+        print("No screenshots captured. Exiting.")
+        exit(0)
+
+    # B. Analyze all captured screenshots with GPT-4 Vision
+    print("\nAnalyzing all captured screenshots with GPT-4 Vision...")
+    sop_result = analyze_screenshots_with_gpt_vision(SCREENSHOTS_DIR)
+
+    print("\n=== Generated SOP/Analysis ===")
+    print(sop_result)
