@@ -75,10 +75,13 @@ def encode_image(image_path: str) -> str:
 # -----------------------------------------------------------------
 # 4. Analyze Screenshots with GPT-4 Vision in ONE request
 # -----------------------------------------------------------------
+# -----------------------------------------------------------------
+# 4. Analyze Screenshots with GPT-4 Vision in ONE request
+# -----------------------------------------------------------------
 def analyze_screenshots_with_gpt_vision(screenshots_dir: str) -> str:
     """
     Gathers all images in 'screenshots_dir', encodes them, and sends them
-    in a single GPT-4 Vision request to generate a SOP (or describe images).
+    in a single GPT-4 Vision request to generate one final SOP (not separate).
     """
     # Collect all PNG files in alphabetical order
     image_files = sorted(Path(screenshots_dir).glob("*.png"))
@@ -86,30 +89,35 @@ def analyze_screenshots_with_gpt_vision(screenshots_dir: str) -> str:
         return "No screenshots found to analyze."
 
     # Build the content array for the user message
+    # We explicitly say: "Give me one final SOP" to ensure a consolidated response
     content_array = [
         {
             "type": "text",
-            "text": "What is shown in these images? Please describe them step-by-step and create an SOP based on these images. I want you to only give me explinations based on the images"
+            "text": (
+                "Please look at all the images provided below, which show a screen recording session. "
+                "I want you to create **one single, consolidated Standard Operating Procedure (SOP)** "
+                "that covers the entire multi-step process depicted across **all** the screenshots. "
+                "Do **not** create separate SOP sections for each image; instead, merge them into a "
+                "single, cohesive SOP. Focus purely on the actions visible in the images and base "
+                "your response solely on what can be inferred from these images. Provide numbered steps for the SOP"
+            )
         }
     ]
 
     for img_path in image_files:
         base64_data = encode_image(str(img_path))
-        # Insert each image as a "type: image_url" entry, with data URI
         content_array.append(
             {
                 "type": "image_url",
                 "image_url": {
-                    # data:image/png is common if your screenshot is .png 
                     "url": f"data:image/png;base64,{base64_data}"
                 },
             }
         )
 
-    # Prompt for GPT-4 Vision
-    # Adjust content as desired (below is just an example).
+    # Now the 'messages' block uses the revised prompt
     messages = [
-        {"role": "system", "content": "You are an AI expert in process automation."},
+        {"role": "system", "content": "You are an AI expert in process automation. That analyses computed screenshots to come up with SOPs"},
         {
             "role": "user",
             "content": content_array,
@@ -135,7 +143,6 @@ def analyze_screenshots_with_gpt_vision(screenshots_dir: str) -> str:
         if response.status_code == 200:
             data = response.json()
             if "choices" in data and len(data["choices"]) > 0:
-                # The content might be found in data["choices"][0]["message"]["content"]
                 return data["choices"][0]["message"]["content"].strip()
             else:
                 return "No content returned by GPT Vision."
@@ -144,7 +151,6 @@ def analyze_screenshots_with_gpt_vision(screenshots_dir: str) -> str:
 
     except Exception as e:
         return f"Error connecting to GPT Vision: {e}"
-
 # -----------------------------------------------------------------
 # 5. Main: Continuous Capture, then One-Time Analysis
 # -----------------------------------------------------------------
