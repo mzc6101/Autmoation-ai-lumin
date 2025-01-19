@@ -8,7 +8,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # -----------------------------------------------------------------
-# 1. Load Environment (for API_KEY) and Set Constants
+# 1. Load Environment 
 # -----------------------------------------------------------------
 load_dotenv()  # Loads .env if present
 
@@ -22,7 +22,7 @@ Path(SCREENSHOTS_DIR).mkdir(exist_ok=True)
 
 # How long to capture screenshots in seconds
 DURATION = 15
-# How often to take a screenshot in seconds (e.g., every 2 seconds)
+# How often to take a screenshot in seconds 
 CAPTURE_INTERVAL = 1
 
 # -----------------------------------------------------------------
@@ -63,7 +63,7 @@ def take_continuous_screenshots(
     return screenshot_count
 
 # -----------------------------------------------------------------
-# 3. Encode Image Function (Base64)
+# 3. Encode Image Function 
 # -----------------------------------------------------------------
 def encode_image(image_path: str) -> str:
     """
@@ -72,9 +72,6 @@ def encode_image(image_path: str) -> str:
     with open(image_path, "rb") as f:
         return base64.b64encode(f.read()).decode("utf-8")
 
-# -----------------------------------------------------------------
-# 4. Analyze Screenshots with GPT-4 Vision in ONE request
-# -----------------------------------------------------------------
 # -----------------------------------------------------------------
 # 4. Analyze Screenshots with GPT-4 Vision in ONE request
 # -----------------------------------------------------------------
